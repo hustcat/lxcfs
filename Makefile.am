@@ -22,7 +22,8 @@ if HAVE_HELP2MAN
 man_MANS = lxcfs.1
 
 lxcfs.1: lxcfs lxcfs.man.add
-	$(HELP2MAN) -n "Set up cgroup fs for containers" --no-discard-stderr -s 1 -I lxcfs.man.add -N ./lxcfs > lxcfs.1
+#	$(HELP2MAN) -n "Set up cgroup fs for containers" --no-discard-stderr -s 1 -I lxcfs.man.add -N ./lxcfs > lxcfs.1
+	$(HELP2MAN) -n "Set up cgroup fs for containers" -s 1 -I lxcfs.man.add -N ./lxcfs > lxcfs.1
 endif
 
 distclean:

@@ -21,7 +21,7 @@ AC_PROG_CC
 
 AC_PROG_CC_C99
 
-PKG_CHECK_MODULES([NIH], [libnih >= 1.0.2])
+PKG_CHECK_MODULES([NIH], [libnih >= 1.0.1])
 PKG_CHECK_MODULES([NIH_DBUS], [libnih-dbus >= 1.0.0])
 PKG_CHECK_MODULES([DBUS], [dbus-1 >= 1.2.16])
 PKG_CHECK_MODULES([CGMANAGER], [libcgmanager >= 0.0.0])

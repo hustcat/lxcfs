@@ -65,7 +65,8 @@ static void cgm_dbus_disconnect(void)
        cgroup_manager = NULL;
 }
 
-#define CGMANAGER_DBUS_SOCK "unix:path=/sys/fs/cgroup/cgmanager/sock"
+//#define CGMANAGER_DBUS_SOCK "unix:path=/sys/fs/cgroup/cgmanager/sock"
+#define CGMANAGER_DBUS_SOCK "unix:path=/cgroup/cgmanager/sock"
 static bool cgm_dbus_connect(void)
 {
 	DBusError dbus_error;

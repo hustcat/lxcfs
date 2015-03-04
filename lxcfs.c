@@ -32,6 +32,7 @@
 #include <nih/alloc.h>
 #include <nih/string.h>
 
+#include "setns.h"
 #include "cgmanager.h"
 
 struct lxcfs_state {
