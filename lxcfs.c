@@ -34,6 +34,7 @@
 
 #include "setns.h"
 #include "cgmanager.h"
+#include "config.h"
 
 struct lxcfs_state {
 	/*
@@ -2122,10 +2123,10 @@ const struct fuse_operations lxcfs_ops = {
 
 static void usage(const char *me)
 {
-	fprintf(stderr, "Usage:\n");
-	fprintf(stderr, "\n");
-	fprintf(stderr, "%s [FUSE and mount options] mountpoint\n", me);
-	exit(1);
+	fprintf(stdout, "Usage:\n");
+	fprintf(stdout, "\n");
+	fprintf(stdout, "%s [FUSE and mount options] mountpoint\n", me);
+	exit(0);
 }
 
 static bool is_help(char *w)
@@ -2138,6 +2139,14 @@ static bool is_help(char *w)
 	return false;
 }
 
+static bool is_version(char *w)
+{
+	if (strcmp(w, "-v") == 0 ||
+			strcmp(w, "--version") == 0)
+		return true;
+	return false;
+}
+
 int main(int argc, char *argv[])
 {
 	int ret;
@@ -2145,6 +2154,11 @@ int main(int argc, char *argv[])
 
 	if (argc < 2 || is_help(argv[1]))
 		usage(argv[0]);
+	
+	if (argc < 2 || is_version(argv[1])){
+		fprintf(stdout, "Version: %s\n", VERSION);
+		exit(0);
+	}
 
 	d = malloc(sizeof(*d));
 	if (!d)
