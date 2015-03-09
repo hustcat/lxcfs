@@ -1398,6 +1398,25 @@ static void get_mem_cached(char *memstat, unsigned long *v)
 	}
 }
 
+static void get_mem_value(char *memstat, char *key, unsigned long *v)
+{	char *eol;
+
+	size_t len = strlen(key);
+	*v = 0;
+
+	while (*memstat) {
+		if (startswith(memstat, key)) {
+			sscanf(memstat + len, "%lu", v);
+			return;
+		}
+		eol = strchr(memstat, '\n');
+		if (!eol)
+			return;
+		memstat = eol+1;
+	}
+
+}
+
 static char *get_pid_cgroup(pid_t pid, const char *contrl)
 {
 	nih_local char *fnam = NULL;
@@ -1511,6 +1530,58 @@ static int proc_meminfo_read(char *buf, size_t size, off_t offset,
 	free(line);
 	return total_len;
 }
+
+static int proc_vmstat_read(char *buf, size_t size, off_t offset,
+		struct fuse_file_info *fi)
+{
+	struct fuse_context *fc = fuse_get_context();
+	nih_local char *cg = get_pid_cgroup(fc->pid, "memory");
+	nih_local char *memstat_str = NULL;
+	unsigned long pgpgin = 0, pgpgout = 0;
+	char *line = NULL;
+	size_t linelen = 0, total_len = 0;
+	FILE *f;
+
+	if (offset)
+		return -EINVAL;
+
+	if (!cg)
+		return 0;
+
+	if (!cgm_get_value("memory", cg, "memory.stat", &memstat_str))
+		return 0;
+
+	get_mem_value(memstat_str, "total_pgpgin", &pgpgin);
+	get_mem_value(memstat_str, "total_pgpgout", &pgpgout);
+
+	f = fopen("/proc/vmstat", "r");
+	if (!f)
+		return 0;
+
+	while (getline(&line, &linelen, f) != -1) {
+		size_t l;
+		char *printme, lbuf[100];
+
+		memset(lbuf, 0, 100);
+		if (startswith(line, "pgpgin")) {
+			snprintf(lbuf, 100, "pgpgin %lu\n", pgpgin);
+			printme = lbuf;
+		} else if (startswith(line, "pgpgout")) {
+			snprintf(lbuf, 100, "pgpgout %lu\n", pgpgout);
+			printme = lbuf;
+		} else
+			printme = line;
+		l = snprintf(buf, size, "%s", printme);
+		buf += l;
+		size -= l;
+		total_len += l;
+	}
+
+	fclose(f);
+	free(line);
+	return total_len;
+}
+
 
 /*
  * Read the cpuset.cpus for cg
@@ -1881,7 +1952,8 @@ static int proc_getattr(const char *path, struct stat *sb)
 	if (strcmp(path, "/proc/meminfo") == 0 ||
 			strcmp(path, "/proc/cpuinfo") == 0 ||
 			strcmp(path, "/proc/uptime") == 0 ||
-			strcmp(path, "/proc/stat") == 0) {
+			strcmp(path, "/proc/stat") == 0 ||
+			strcmp(path, "/proc/vmstat") == 0) {
 
 		sb->st_size = get_procfile_size(path);
 		sb->st_mode = S_IFREG | 00444;
@@ -1898,7 +1970,8 @@ static int proc_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off
 	if (filler(buf, "cpuinfo", NULL, 0) != 0 ||
 				filler(buf, "meminfo", NULL, 0) != 0 ||
 				filler(buf, "stat", NULL, 0) != 0 ||
-				filler(buf, "uptime", NULL, 0) != 0)
+				filler(buf, "uptime", NULL, 0) != 0 ||
+				filler(buf, "vmstat", NULL, 0)) 
 		return -EINVAL;
 	return 0;
 }
@@ -1908,7 +1981,8 @@ static int proc_open(const char *path, struct fuse_file_info *fi)
 	if (strcmp(path, "/proc/meminfo") == 0 ||
 			strcmp(path, "/proc/cpuinfo") == 0 ||
 			strcmp(path, "/proc/uptime") == 0 ||
-			strcmp(path, "/proc/stat") == 0)
+			strcmp(path, "/proc/stat") == 0 ||
+			strcmp(path, "/proc/vmstat") == 0)
 		return 0;
 	return -ENOENT;
 }
@@ -1924,6 +1998,8 @@ static int proc_read(const char *path, char *buf, size_t size, off_t offset,
 		return proc_uptime_read(buf, size, offset, fi);
 	if (strcmp(path, "/proc/stat") == 0)
 		return proc_stat_read(buf, size, offset, fi);
+	if (strcmp(path, "/proc/vmstat") == 0)
+		return proc_vmstat_read(buf, size, offset, fi);
 	return -EINVAL;
 }
 
