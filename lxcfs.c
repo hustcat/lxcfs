@@ -1613,7 +1613,8 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 	char dev_name[72];
 	struct fuse_context *fc = fuse_get_context();
 	nih_local char *cg = get_pid_cgroup(fc->pid, "blkio");
-	nih_local char *io_serviced_str = NULL, *io_merged_str = NULL, *io_service_bytes_str = NULL, *io_wait_time_str = NULL;
+	nih_local char *io_serviced_str = NULL, *io_merged_str = NULL, *io_service_bytes_str = NULL,
+			*io_wait_time_str = NULL, *io_service_time_str = NULL;
 	unsigned long read = 0, write = 0;
 	unsigned long read_merged = 0, write_merged = 0;
 	unsigned long read_sectors = 0, write_sectors = 0;
@@ -1639,6 +1640,8 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 		return 0;
 	if (!cgm_get_value("blkio", cg, "blkio.io_wait_time", &io_wait_time_str))
 		return 0;
+	if (!cgm_get_value("blkio", cg, "blkio.io_service_time", &io_service_time_str))
+		return 0;
 
 
 	f = fopen("/proc/diskstats", "r");
@@ -1650,9 +1653,8 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 		char *printme, lbuf[256];
 
 		//i = sscanf(line, "%u %u %s %*lu %*lu %*lu %*lu %*lu %*lu %*lu %*lu %*lu %lu", 
-		i = sscanf(line, "%u %u %s %*u %*u %*u %*u %*u %*u %*u %*u %*u %lu", 
-				&major, &minor, dev_name, &tot_ticks);
-		if(i == 4){
+		i = sscanf(line, "%u %u %s", &major, &minor, dev_name);
+		if(i == 3){
 			get_blkio_io_value(io_serviced_str, major, minor, "Read", &read);
 			get_blkio_io_value(io_serviced_str, major, minor, "Write", &write);
 			get_blkio_io_value(io_merged_str, major, minor, "Read", &read_merged);
@@ -1662,9 +1664,11 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 			get_blkio_io_value(io_service_bytes_str, major, minor, "Write", &write_sectors);
 			write_sectors = write_sectors/512;
 			get_blkio_io_value(io_wait_time_str, major, minor, "Read", &read_ticks);
-			read_ticks = read_ticks/(1000000000/HZ);
+			read_ticks = read_ticks/1000000;
 			get_blkio_io_value(io_wait_time_str, major, minor, "Write", &write_ticks);
-			write_ticks =  write_ticks/(1000000000/HZ);
+			write_ticks =  write_ticks/1000000;
+			get_blkio_io_value(io_service_time_str, major, minor, "Total", &tot_ticks);
+			tot_ticks =  tot_ticks/1000000;
 		}else{
 			continue;
 		}
