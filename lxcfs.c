@@ -28,7 +28,6 @@
 #include <sys/socket.h>
 #include <sys/mount.h>
 #include <wait.h>
-#include <sys/param.h> /* for HZ */
 
 #include <nih/alloc.h>
 #include <nih/string.h>
@@ -1620,6 +1619,7 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 	unsigned long read_sectors = 0, write_sectors = 0;
 	unsigned long read_ticks = 0, write_ticks = 0;
 	unsigned long ios_pgr = 0, tot_ticks = 0, rq_ticks = 0;
+	unsigned long rd_svctm = 0, wr_svctm = 0, rd_wait = 0, wr_wait = 0;
 	char *line = NULL;
 	size_t linelen = 0, total_len = 0;
 	unsigned int major = 0, minor = 0;
@@ -1663,10 +1663,19 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 			read_sectors = read_sectors/512;
 			get_blkio_io_value(io_service_bytes_str, major, minor, "Write", &write_sectors);
 			write_sectors = write_sectors/512;
-			get_blkio_io_value(io_wait_time_str, major, minor, "Read", &read_ticks);
-			read_ticks = read_ticks/1000000;
-			get_blkio_io_value(io_wait_time_str, major, minor, "Write", &write_ticks);
-			write_ticks =  write_ticks/1000000;
+			
+			get_blkio_io_value(io_service_time_str, major, minor, "Read", &rd_svctm);
+			rd_svctm = rd_svctm/1000000;
+			get_blkio_io_value(io_wait_time_str, major, minor, "Read", &rd_wait);
+			rd_wait = rd_wait/1000000;
+			read_ticks = rd_svctm + rd_wait;
+
+			get_blkio_io_value(io_service_time_str, major, minor, "Write", &wr_svctm);
+			wr_svctm =  wr_svctm/1000000;
+			get_blkio_io_value(io_wait_time_str, major, minor, "Write", &wr_wait);
+			wr_wait =  wr_wait/1000000;
+			write_ticks = wr_svctm + wr_wait;
+
 			get_blkio_io_value(io_service_time_str, major, minor, "Total", &tot_ticks);
 			tot_ticks =  tot_ticks/1000000;
 		}else{
