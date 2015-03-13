@@ -2358,7 +2358,7 @@ int main(int argc, char *argv[])
 		usage(argv[0]);
 	
 	if (argc < 2 || is_version(argv[1])){
-		fprintf(stdout, "Version: %s\n", VERSION);
+		fprintf(stdout, "Version: %s, compile: %s %s\n", VERSION, __DATE__, __TIME__);
 		exit(0);
 	}
 
