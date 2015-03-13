@@ -1841,7 +1841,21 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 	char *line = NULL;
 	size_t linelen = 0, total_len = 0;
 	int curcpu = -1; /* cpu numbering starts at 0 */
+	unsigned long user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0, guest = 0;
+	unsigned long user_sum = 0, nice_sum = 0, system_sum = 0, idle_sum = 0, iowait_sum = 0,
+					irq_sum = 0, softirq_sum = 0, steal_sum = 0, guest_sum = 0;
+	char cpuall[256];
+	char *tmpbuf = NULL, *tp = NULL;
+	size_t old_size = size;
 	FILE *f;
+
+	tmpbuf = (char*)malloc(size);
+	if (tmpbuf) {
+		tp = tmpbuf;
+	}else{
+		fprintf(stderr, "proc_stat_read malloc failed\n");
+		return 0;
+	}
 
 	if (offset)
 		return -EINVAL;
@@ -1857,6 +1871,9 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 	if (!f)
 		return 0;
 
+	//skip first line
+	getline(&line, &linelen, f);
+	
 	while (getline(&line, &linelen, f) != -1) {
 		size_t l;
 		int cpu;
@@ -1865,8 +1882,8 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 
 		if (sscanf(line, "cpu%9[^ ]", cpu_char) != 1) {
 			/* not a ^cpuN line containing a number N, just print it */
-			l = snprintf(buf, size, "%s", line);
-			buf += l;
+			l = snprintf(tp, size, "%s", line);
+			tp += l;
 			size -= l;
 			total_len += l;
 			continue;
@@ -1881,13 +1898,45 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 		c = strchr(line, ' ');
 		if (!c)
 			continue;
-		l = snprintf(buf, size, "cpu%d %s", curcpu, c);
-		buf += l;
+		l = snprintf(tp, size, "cpu%d %s", curcpu, c);
+		tp += l;
 		size -= l;
 		total_len += l;
+		
+		if (sscanf(line, "%*s %lu %lu %lu %lu %lu %lu %lu %lu %lu", &user, &nice, &system, &idle, &iowait, &irq,
+			&softirq, &steal, &guest) != 9)
+			continue;
+		user_sum += user;
+		nice_sum += nice;
+		system_sum += system;
+		idle_sum += idle;
+		iowait_sum += iowait;
+		irq_sum += irq;
+		softirq_sum += softirq;
+		steal_sum += steal;
+		guest_sum += guest;
+	}
+
+	int sum_len = snprintf(cpuall, 256, "%s %lu %lu %lu %lu %lu %lu %lu %lu %lu\n", 
+		"cpu ", user_sum, nice_sum, system_sum, idle_sum, iowait_sum, irq_sum, softirq_sum, steal_sum, guest_sum);
+	if(sum_len > 0){
+		memcpy(buf, cpuall, sum_len);
+		buf += sum_len;
+		size -= sum_len;
+		if(size > 0){
+			memcpy(buf, tmpbuf, total_len);
+			total_len += sum_len;
+		}else{
+			memcpy(buf, tp, old_size - sum_len);
+			total_len = old_size; 
+		}
+	}else{
+		/* shouldn't happen */
+		memcpy(buf, tp, total_len);
 	}
 
 	fclose(f);
+	free(tmpbuf);
 	free(line);
 	return total_len;
 }
