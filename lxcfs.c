@@ -1813,9 +1813,16 @@ static int proc_cpuinfo_read(char *buf, size_t size, off_t offset,
 			if (am_printing) {
 				curcpu ++;
 				l = snprintf(buf, size, "processor	: %d\n", curcpu);
-				buf += l;
-				size -= l;
-				total_len += l;
+				if (l < size){
+					buf += l;
+					size -= l;
+					total_len += l;
+				}else{
+					buf += size;
+					total_len += size;
+					size = 0;
+					break;
+				}
 			}
 			continue;
 		}
@@ -1849,6 +1856,9 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 	size_t old_size = size;
 	FILE *f;
 
+	if (offset)
+		return -EINVAL;
+	
 	tmpbuf = (char*)malloc(size);
 	if (tmpbuf) {
 		tp = tmpbuf;
@@ -1856,9 +1866,6 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 		fprintf(stderr, "proc_stat_read malloc failed\n");
 		return 0;
 	}
-
-	if (offset)
-		return -EINVAL;
 
 	if (!cg)
 		return 0;
@@ -1883,10 +1890,18 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 		if (sscanf(line, "cpu%9[^ ]", cpu_char) != 1) {
 			/* not a ^cpuN line containing a number N, just print it */
 			l = snprintf(tp, size, "%s", line);
-			tp += l;
-			size -= l;
-			total_len += l;
-			continue;
+			if ( size > l){
+				tp += l;
+				size -= l;
+				total_len += l;
+				continue;
+			}else{
+				//no more space, break it
+				tp += size;
+				total_len += size;
+				size = 0;
+				break;
+			}
 		}
 
 		if (sscanf(cpu_char, "%d", &cpu) != 1)
@@ -1917,21 +1932,22 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 		guest_sum += guest;
 	}
 
-	int sum_len = snprintf(cpuall, 256, "%s %lu %lu %lu %lu %lu %lu %lu %lu %lu\n", 
+	int cpuall_len = snprintf(cpuall, 256, "%s %lu %lu %lu %lu %lu %lu %lu %lu %lu\n", 
 		"cpu ", user_sum, nice_sum, system_sum, idle_sum, iowait_sum, irq_sum, softirq_sum, steal_sum, guest_sum);
-	if(sum_len > 0){
-		memcpy(buf, cpuall, sum_len);
-		buf += sum_len;
-		size -= sum_len;
-		if(size > 0){
+	if (cpuall_len > 0 && cpuall_len < 256){
+		memcpy(buf, cpuall, cpuall_len);
+		buf += cpuall_len;
+		if(size >= cpuall_len){
+			//size -= sum_len;
 			memcpy(buf, tmpbuf, total_len);
-			total_len += sum_len;
+			total_len += cpuall_len;
 		}else{
-			memcpy(buf, tp, old_size - sum_len);
+			memcpy(buf, tmpbuf, old_size - cpuall_len);
 			total_len = old_size; 
 		}
 	}else{
 		/* shouldn't happen */
+		fprintf(stderr, "proc_stat_read copy cpuall failed\n");
 		memcpy(buf, tp, total_len);
 	}
 
@@ -2127,6 +2143,7 @@ static int proc_getattr(const char *path, struct stat *sb)
 			strcmp(path, "/proc/diskstats") == 0) {
 
 		sb->st_size = get_procfile_size(path);
+		//sb->st_size = 0;
 		sb->st_mode = S_IFREG | 00444;
 		sb->st_nlink = 1;
 		return 0;
