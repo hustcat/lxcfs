@@ -1828,9 +1828,16 @@ static int proc_cpuinfo_read(char *buf, size_t size, off_t offset,
 		}
 		if (am_printing) {
 			l = snprintf(buf, size, "%s", line);
-			buf += l;
-			size -= l;
-			total_len += l;
+			if (l < size) {
+				buf += l;
+				size -= l;
+				total_len += l;
+			} else {
+				buf += size;
+				total_len += size;
+				size = 0;
+				break;
+			}
 		}
 	}
 
@@ -2146,6 +2153,9 @@ static int proc_getattr(const char *path, struct stat *sb)
 		//sb->st_size = 0;
 		sb->st_mode = S_IFREG | 00444;
 		sb->st_nlink = 1;
+#if 0
+		fprintf(stderr, "mtime=%lu, %lu\t size=%lu\n", sb->st_mtim.tv_sec, sb->st_mtim.tv_nsec, sb->st_size);
+#endif
 		return 0;
 	}
 
