@@ -1517,12 +1517,17 @@ static int proc_meminfo_read(char *buf, size_t size, off_t offset,
 	unsigned long memlimit = 0, memusage = 0, cached = 0, hosttotal = 0;
 	char *line = NULL;
 	size_t linelen = 0, total_len = 0;
+	char *cache = file_data_infos[FILE_MEMINFO].buf;
+	size_t cache_size = MAX_DATA_BUF_SIZE;
 	FILE *f;
 
 	if (offset){
 		if (offset > file_data_infos[FILE_MEMINFO].actual_size)
 			return -EINVAL;
-		return 0;
+		int left = file_data_infos[FILE_MEMINFO].actual_size - offset;
+		total_len = left > size ? size: left;
+		memcpy(buf, cache + offset, total_len);
+		return total_len;
 	}
 
 	if (!cg)
@@ -1572,13 +1577,17 @@ static int proc_meminfo_read(char *buf, size_t size, off_t offset,
 			printme = lbuf;
 		} else
 			printme = line;
-		l = snprintf(buf, size, "%s", printme);
-		buf += l;
-		size -= l;
+
+		l = snprintf(cache, cache_size, "%s", printme);
+		cache += l;
+		cache_size -= l;
 		total_len += l;
 	}
 	
 	file_data_infos[FILE_MEMINFO].actual_size = total_len;
+	if (total_len > size ) total_len = size;
+	memcpy(buf, file_data_infos[FILE_MEMINFO].buf, total_len);
+
 	fclose(f);
 	free(line);
 	return total_len;
@@ -1593,13 +1602,19 @@ static int proc_vmstat_read(char *buf, size_t size, off_t offset,
 	unsigned long pgpgin = 0, pgpgout = 0;
 	char *line = NULL;
 	size_t linelen = 0, total_len = 0;
+	char *cache = file_data_infos[FILE_VMSTAT].buf;
+	size_t cache_size = MAX_DATA_BUF_SIZE;
 	FILE *f;
 
 	if (offset){
 		if (offset > file_data_infos[FILE_VMSTAT].actual_size)
 			return -EINVAL;
-		return 0;
+		int left = file_data_infos[FILE_VMSTAT].actual_size - offset;
+		total_len = left > size ? size: left;
+		memcpy(buf, cache + offset, total_len);
+		return total_len;
 	}
+
 	if (!cg)
 		return 0;
 
@@ -1626,13 +1641,16 @@ static int proc_vmstat_read(char *buf, size_t size, off_t offset,
 			printme = lbuf;
 		} else
 			printme = line;
-		l = snprintf(buf, size, "%s", printme);
-		buf += l;
-		size -= l;
+		l = snprintf(cache, cache_size, "%s", printme);
+		cache += l;
+		cache_size -= l;
 		total_len += l;
 	}
 
 	file_data_infos[FILE_VMSTAT].actual_size = total_len;
+	if (total_len > size ) total_len = size;
+	memcpy(buf, file_data_infos[FILE_VMSTAT].buf, total_len);
+
 	fclose(f);
 	free(line);
 	return total_len;
