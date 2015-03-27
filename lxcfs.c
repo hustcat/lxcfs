@@ -28,7 +28,7 @@
 #include <sys/socket.h>
 #include <sys/mount.h>
 #include <wait.h>
-
+#include <assert.h>
 #include <nih/alloc.h>
 #include <nih/string.h>
 
@@ -45,6 +45,31 @@ struct lxcfs_state {
 };
 #define LXCFS_DATA ((struct lxcfs_state *) fuse_get_context()->private_data)
 
+#define MAX_DATA_BUF_SIZE 65536 /*64Kb should be enough*/
+
+struct file_data_info {
+	size_t max_size;
+	size_t actual_size;
+	char *buf;
+};
+
+enum file_name {
+	FILE_MEMINFO   = 0,
+	FILE_CPUINFO   = 1,
+	FILE_UPTIME    = 2,
+	FILE_STAT      = 3,
+	FILE_VMSTAT    = 4,
+	FILE_DISKSTATS = 5,
+	NOUSEDFILE= 6, 
+};
+
+struct file_data_info file_data_infos[NOUSEDFILE];
+
+#define MY_ASSERT(EXP)\
+	if (!(EXP)){\
+		fprintf(stderr, "assert failed at file: %s line:%d\n", __FILE__, __LINE__);\
+		assert(0);\
+	}
 /*
  * TODO - return value should denote whether child exited with failure
  * so callers can return errors.  Esp read/write of tasks and cgroup.procs
@@ -1494,8 +1519,11 @@ static int proc_meminfo_read(char *buf, size_t size, off_t offset,
 	size_t linelen = 0, total_len = 0;
 	FILE *f;
 
-	if (offset)
-		return -EINVAL;
+	if (offset){
+		if (offset > file_data_infos[FILE_MEMINFO].actual_size)
+			return -EINVAL;
+		return 0;
+	}
 
 	if (!cg)
 		return 0;
@@ -1549,7 +1577,8 @@ static int proc_meminfo_read(char *buf, size_t size, off_t offset,
 		size -= l;
 		total_len += l;
 	}
-
+	
+	file_data_infos[FILE_MEMINFO].actual_size = total_len;
 	fclose(f);
 	free(line);
 	return total_len;
@@ -1566,9 +1595,11 @@ static int proc_vmstat_read(char *buf, size_t size, off_t offset,
 	size_t linelen = 0, total_len = 0;
 	FILE *f;
 
-	if (offset)
-		return -EINVAL;
-
+	if (offset){
+		if (offset > file_data_infos[FILE_VMSTAT].actual_size)
+			return -EINVAL;
+		return 0;
+	}
 	if (!cg)
 		return 0;
 
@@ -1601,6 +1632,7 @@ static int proc_vmstat_read(char *buf, size_t size, off_t offset,
 		total_len += l;
 	}
 
+	file_data_infos[FILE_VMSTAT].actual_size = total_len;
 	fclose(f);
 	free(line);
 	return total_len;
@@ -1626,8 +1658,11 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 	int i = 0;
 	FILE *f;
 
-	if (offset)
-		return -EINVAL;
+	if (offset){
+		if (offset > file_data_infos[FILE_DISKSTATS].actual_size)
+			return -EINVAL;
+		return 0;
+	}
 
 	if (!cg)
 		return 0;
@@ -1696,6 +1731,8 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 		size -= l;
 		total_len += l;
 	}
+
+	file_data_infos[FILE_DISKSTATS].actual_size = total_len;
 
 	fclose(f);
 	free(line);
@@ -1790,11 +1827,20 @@ static int proc_cpuinfo_read(char *buf, size_t size, off_t offset,
 	size_t linelen = 0, total_len = 0;
 	bool am_printing = false;
 	int curcpu = -1;
+	char *cache = file_data_infos[FILE_CPUINFO].buf;
+	size_t cache_size = MAX_DATA_BUF_SIZE;
 	FILE *f;
 
-	if (offset)
-		return -EINVAL;
+	if (offset){
+		if (offset > file_data_infos[FILE_CPUINFO].actual_size)
+			return -EINVAL;
+		int left = file_data_infos[FILE_CPUINFO].actual_size - offset;
+		total_len = left > size ? size: left;
+		memcpy(buf, cache + offset, total_len);
+		return total_len;	
+	}
 
+	/* read from offset 0 */
 	if (!cg)
 		return 0;
 
@@ -1812,35 +1858,40 @@ static int proc_cpuinfo_read(char *buf, size_t size, off_t offset,
 			am_printing = cpuline_in_cpuset(line, cpuset);
 			if (am_printing) {
 				curcpu ++;
-				l = snprintf(buf, size, "processor	: %d\n", curcpu);
-				if (l < size){
-					buf += l;
-					size -= l;
+				l = snprintf(cache, cache_size, "processor	: %d\n", curcpu);
+				if (l < cache_size){
+					cache += l;
+					cache_size -= l;
 					total_len += l;
 				}else{
-					buf += size;
-					total_len += size;
-					size = 0;
+					cache += cache_size;
+					total_len += cache_size;
+					cache_size = 0;
 					break;
 				}
 			}
 			continue;
 		}
 		if (am_printing) {
-			l = snprintf(buf, size, "%s", line);
-			if (l < size) {
-				buf += l;
-				size -= l;
+			l = snprintf(cache, cache_size, "%s", line);
+			if (l < cache_size) {
+				cache += l;
+				cache_size -= l;
 				total_len += l;
 			} else {
-				buf += size;
-				total_len += size;
-				size = 0;
+				cache += cache_size;
+				total_len += cache_size;
+				cache_size = 0;
 				break;
 			}
 		}
 	}
 
+	file_data_infos[FILE_CPUINFO].actual_size = total_len;
+	if (total_len > size ) total_len = size;
+
+	/* read from off 0 */
+	memcpy(buf, file_data_infos[FILE_CPUINFO].buf, total_len);
 	fclose(f);
 	free(line);
 	return total_len;
@@ -1858,20 +1909,20 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 	unsigned long user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0, guest = 0;
 	unsigned long user_sum = 0, nice_sum = 0, system_sum = 0, idle_sum = 0, iowait_sum = 0,
 					irq_sum = 0, softirq_sum = 0, steal_sum = 0, guest_sum = 0;
-	char cpuall[256];
-	char *tmpbuf = NULL, *tp = NULL;
-	size_t old_size = size;
+#define CPUALL_MAX_SIZE 256
+	char cpuall[CPUALL_MAX_SIZE];
+	/* reserve for cpu all */
+	char *cache = file_data_infos[FILE_STAT].buf + CPUALL_MAX_SIZE;
+	size_t cache_size = MAX_DATA_BUF_SIZE - CPUALL_MAX_SIZE;
 	FILE *f;
 
-	if (offset)
-		return -EINVAL;
-	
-	tmpbuf = (char*)malloc(size);
-	if (tmpbuf) {
-		tp = tmpbuf;
-	}else{
-		fprintf(stderr, "proc_stat_read malloc failed\n");
-		return 0;
+	if (offset){
+		if (offset > file_data_infos[FILE_STAT].actual_size)
+			return -EINVAL;
+			int left = file_data_infos[FILE_STAT].actual_size - offset;
+			total_len = left > size ? size: left;
+			memcpy(buf, cache + offset, total_len);
+			return total_len;	
 	}
 
 	if (!cg)
@@ -1896,17 +1947,17 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 
 		if (sscanf(line, "cpu%9[^ ]", cpu_char) != 1) {
 			/* not a ^cpuN line containing a number N, just print it */
-			l = snprintf(tp, size, "%s", line);
-			if ( size > l){
-				tp += l;
-				size -= l;
+			l = snprintf(cache, cache_size, "%s", line);
+			if (l < cache_size){
+				cache += l;
+				cache_size -= l;
 				total_len += l;
 				continue;
 			}else{
 				//no more space, break it
-				tp += size;
-				total_len += size;
-				size = 0;
+				cache += cache_size;
+				total_len += cache_size;
+				cache_size = 0;
 				break;
 			}
 		}
@@ -1920,9 +1971,9 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 		c = strchr(line, ' ');
 		if (!c)
 			continue;
-		l = snprintf(tp, size, "cpu%d %s", curcpu, c);
-		tp += l;
-		size -= l;
+		l = snprintf(cache, cache_size, "cpu%d %s", curcpu, c);
+		cache += l;
+		cache_size -= l;
 		total_len += l;
 		
 		if (sscanf(line, "%*s %lu %lu %lu %lu %lu %lu %lu %lu %lu", &user, &nice, &system, &idle, &iowait, &irq,
@@ -1939,27 +1990,28 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 		guest_sum += guest;
 	}
 
-	int cpuall_len = snprintf(cpuall, 256, "%s %lu %lu %lu %lu %lu %lu %lu %lu %lu\n", 
+	cache = file_data_infos[FILE_STAT].buf;
+
+	int cpuall_len = snprintf(cpuall, CPUALL_MAX_SIZE, "%s %lu %lu %lu %lu %lu %lu %lu %lu %lu\n", 
 		"cpu ", user_sum, nice_sum, system_sum, idle_sum, iowait_sum, irq_sum, softirq_sum, steal_sum, guest_sum);
-	if (cpuall_len > 0 && cpuall_len < 256){
-		memcpy(buf, cpuall, cpuall_len);
-		buf += cpuall_len;
-		if(size >= cpuall_len){
-			//size -= sum_len;
-			memcpy(buf, tmpbuf, total_len);
-			total_len += cpuall_len;
-		}else{
-			memcpy(buf, tmpbuf, old_size - cpuall_len);
-			total_len = old_size; 
-		}
+	if (cpuall_len > 0 && cpuall_len < CPUALL_MAX_SIZE){
+		memcpy(cache, cpuall, cpuall_len);
+		cache += cpuall_len;	
 	}else{
 		/* shouldn't happen */
-		fprintf(stderr, "proc_stat_read copy cpuall failed\n");
-		memcpy(buf, tp, total_len);
+		fprintf(stderr, "proc_stat_read copy cpuall failed, cpuall_len=%d\n", cpuall_len);
+		cpuall_len = 0;
+		MY_ASSERT(0);
 	}
 
+	memmove(cache, file_data_infos[FILE_STAT].buf + CPUALL_MAX_SIZE, total_len);
+	total_len += cpuall_len;
+	file_data_infos[FILE_STAT].actual_size = total_len;
+	if (total_len > size ) total_len = size;
+
+	memcpy(buf, file_data_infos[FILE_STAT].buf, total_len);
+	
 	fclose(f);
-	free(tmpbuf);
 	free(line);
 	return total_len;
 }
@@ -2105,10 +2157,17 @@ static int proc_uptime_read(char *buf, size_t size, off_t offset,
 	struct fuse_context *fc = fuse_get_context();
 	long int reaperage = getreaperage(fc->pid);;
 	long int idletime = getprocidle();
+	size_t total_len = 0;
 
-	if (offset)
-		return -EINVAL;
-	return snprintf(buf, size, "%ld %ld\n", reaperage, idletime);
+	if (offset){
+		if (offset > file_data_infos[FILE_UPTIME].actual_size)
+			return -EINVAL;
+		return 0;
+	}
+
+	total_len = snprintf(buf, size, "%ld %ld\n", reaperage, idletime);
+	file_data_infos[FILE_UPTIME].actual_size = total_len;
+	return total_len;
 }
 
 static off_t get_procfile_size(const char *which)
@@ -2142,24 +2201,27 @@ static int proc_getattr(const char *path, struct stat *sb)
 		sb->st_nlink = 2;
 		return 0;
 	}
-	if (strcmp(path, "/proc/meminfo") == 0 ||
-			strcmp(path, "/proc/cpuinfo") == 0 ||
-			strcmp(path, "/proc/uptime") == 0 ||
-			strcmp(path, "/proc/stat") == 0 ||
-			strcmp(path, "/proc/vmstat") == 0 ||
-			strcmp(path, "/proc/diskstats") == 0) {
-
-		sb->st_size = get_procfile_size(path);
-		//sb->st_size = 0;
-		sb->st_mode = S_IFREG | 00444;
-		sb->st_nlink = 1;
-#if 0
-		fprintf(stderr, "mtime=%lu, %lu\t size=%lu\n", sb->st_mtim.tv_sec, sb->st_mtim.tv_nsec, sb->st_size);
-#endif
-		return 0;
+	if (strcmp(path, "/proc/meminfo") == 0) {
+		file_data_infos[FILE_MEMINFO].max_size = file_data_infos[FILE_MEMINFO].actual_size = sb->st_size = get_procfile_size(path);
+	}else if(strcmp(path, "/proc/cpuinfo") == 0){
+		file_data_infos[FILE_CPUINFO].max_size = file_data_infos[FILE_CPUINFO].actual_size = sb->st_size = get_procfile_size(path);
+	}else if(strcmp(path, "/proc/uptime") == 0){
+		file_data_infos[FILE_UPTIME].max_size = file_data_infos[FILE_UPTIME].actual_size = sb->st_size = get_procfile_size(path);
+	}else if(strcmp(path, "/proc/stat") == 0){
+		file_data_infos[FILE_STAT].max_size = file_data_infos[FILE_STAT].actual_size = sb->st_size = get_procfile_size(path);
+	}else if(strcmp(path, "/proc/vmstat") == 0){
+		file_data_infos[FILE_VMSTAT].max_size = file_data_infos[FILE_VMSTAT].actual_size = sb->st_size = get_procfile_size(path);
+	}else if(strcmp(path, "/proc/diskstats") == 0) {
+		file_data_infos[FILE_DISKSTATS].max_size = file_data_infos[FILE_DISKSTATS].actual_size = sb->st_size = get_procfile_size(path);
+	}else{
+		return -ENOENT;
 	}
-
-	return -ENOENT;
+	sb->st_mode = S_IFREG | 00444;
+	sb->st_nlink = 1;
+#if 0
+	fprintf(stderr, "mtime=%lu, %lu\t size=%lu\n", sb->st_mtim.tv_sec, sb->st_mtim.tv_nsec, sb->st_size);
+#endif
+	return 0;
 }
 
 static int proc_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset,
@@ -2436,6 +2498,11 @@ int main(int argc, char *argv[])
 	if (argc < 2 || is_version(argv[1])){
 		fprintf(stdout, "Version: %s, compile: %s %s\n", VERSION, __DATE__, __TIME__);
 		exit(0);
+	}
+
+	memset(file_data_infos, 0, sizeof(file_data_infos));
+	for ( int i = 0; i < NOUSEDFILE; i ++){
+		file_data_infos[i].buf = (char *) malloc(MAX_DATA_BUF_SIZE);		
 	}
 
 	d = malloc(sizeof(*d));
