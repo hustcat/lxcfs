@@ -1465,6 +1465,28 @@ static void get_blkio_io_value(char *str, unsigned major, unsigned minor, char *
 
 }
 
+static void get_blkio_value(char *str, unsigned major, unsigned minor, unsigned long *v)
+{   char *eol;
+	char key[32];
+	
+	memset(key, 0, 32);
+	snprintf(key, 32, "%u:%u", major, minor);
+
+    size_t len = strlen(key);
+    *v = 0;
+
+    while (*str) {
+        if (startswith(str, key)) {
+            sscanf(str + len, "%lu", v);
+            return;
+        }
+        eol = strchr(str, '\n');
+        if (!eol)
+            return;
+        str = eol+1;
+    }
+
+}
 
 static char *get_pid_cgroup(pid_t pid, const char *contrl)
 {
@@ -1663,7 +1685,7 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 	struct fuse_context *fc = fuse_get_context();
 	nih_local char *cg = get_pid_cgroup(fc->pid, "blkio");
 	nih_local char *io_serviced_str = NULL, *io_merged_str = NULL, *io_service_bytes_str = NULL,
-			*io_wait_time_str = NULL, *io_service_time_str = NULL;
+			*io_wait_time_str = NULL, *io_service_time_str = NULL, *io_time_str = NULL;
 	unsigned long read = 0, write = 0;
 	unsigned long read_merged = 0, write_merged = 0;
 	unsigned long read_sectors = 0, write_sectors = 0;
@@ -1694,6 +1716,8 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 	if (!cgm_get_value("blkio", cg, "blkio.io_wait_time", &io_wait_time_str))
 		return 0;
 	if (!cgm_get_value("blkio", cg, "blkio.io_service_time", &io_service_time_str))
+		return 0;
+	if (!cgm_get_value("blkio", cg, "blkio.time", &io_time_str))
 		return 0;
 
 
@@ -1729,8 +1753,9 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
 			wr_wait =  wr_wait/1000000;
 			write_ticks = wr_svctm + wr_wait;
 
-			get_blkio_io_value(io_service_time_str, major, minor, "Total", &tot_ticks);
-			tot_ticks =  tot_ticks/1000000;
+			/*get_blkio_io_value(io_service_time_str, major, minor, "Total", &tot_ticks);
+			tot_ticks =  tot_ticks/1000000;*/
+			get_blkio_value(io_time_str, major, minor, &tot_ticks);	
 		}else{
 			continue;
 		}
