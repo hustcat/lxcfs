@@ -1962,10 +1962,10 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 	if (offset){
 		if (offset > file_data_infos[FILE_STAT].actual_size)
 			return -EINVAL;
-			int left = file_data_infos[FILE_STAT].actual_size - offset;
-			total_len = left > size ? size: left;
-			memcpy(buf, cache + offset, total_len);
-			return total_len;	
+		int left = file_data_infos[FILE_STAT].actual_size - offset;
+		total_len = left > size ? size: left;
+		memcpy(buf, file_data_infos[FILE_STAT].buf + offset, total_len);
+		return total_len;	
 	}
 
 	if (!cg)
@@ -2014,7 +2014,7 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
 		c = strchr(line, ' ');
 		if (!c)
 			continue;
-		l = snprintf(cache, cache_size, "cpu%d %s", curcpu, c);
+		l = snprintf(cache, cache_size, "cpu%d%s", curcpu, c);
 		cache += l;
 		cache_size -= l;
 		total_len += l;
