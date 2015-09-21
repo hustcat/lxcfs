@@ -1488,7 +1488,7 @@ static void get_blkio_value(char *str, unsigned major, unsigned minor, unsigned 
 
 }
 
-static char *get_pid_cgroup(pid_t pid, const char *contrl)
+char *get_pid_cgroup(pid_t pid, const char *contrl)
 {
 	nih_local char *fnam = NULL;
 	FILE *f;
@@ -1530,7 +1530,7 @@ out:
  * FUSE ops for /proc
  */
 
-static int proc_meminfo_read(char *buf, size_t size, off_t offset,
+int proc_meminfo_read(char *buf, size_t size, off_t offset,
 		struct fuse_file_info *fi)
 {
 	struct fuse_context *fc = fuse_get_context();
@@ -1615,7 +1615,7 @@ static int proc_meminfo_read(char *buf, size_t size, off_t offset,
 	return total_len;
 }
 
-static int proc_vmstat_read(char *buf, size_t size, off_t offset,
+int proc_vmstat_read(char *buf, size_t size, off_t offset,
 		struct fuse_file_info *fi)
 {
 	struct fuse_context *fc = fuse_get_context();
@@ -1678,7 +1678,7 @@ static int proc_vmstat_read(char *buf, size_t size, off_t offset,
 	return total_len;
 }
 
-static int proc_diskstats_read(char *buf, size_t size, off_t offset,
+int proc_diskstats_read(char *buf, size_t size, off_t offset,
 		struct fuse_file_info *fi)
 {
 	char dev_name[72];
@@ -1788,7 +1788,7 @@ static int proc_diskstats_read(char *buf, size_t size, off_t offset,
  * Read the cpuset.cpus for cg
  * Return the answer in a nih_alloced string
  */
-static char *get_cpuset(const char *cg)
+char *get_cpuset(const char *cg)
 {
 	char *answer;
 
@@ -1820,7 +1820,7 @@ int cpuset_getrange(const char *c, int *a, int *b)
  * cpusets are in format "1,2-3,4"
  * iow, comma-delimited ranges
  */
-static bool cpu_in_cpuset(int cpu, const char *cpuset)
+bool cpu_in_cpuset(int cpu, const char *cpuset)
 {
 	const char *c;
 
@@ -1830,16 +1830,14 @@ static bool cpu_in_cpuset(int cpu, const char *cpuset)
 		ret = cpuset_getrange(c, &a, &b);
 		if (ret == 1 && cpu == a)
 			return true;
-		if (ret != 2) // bad cpuset!
-			return false;
-		if (cpu >= a && cpu <= b)
+		if (ret == 2 && cpu >= a && cpu <= b)
 			return true;
 	}
 
 	return false;
 }
 
-static bool cpuline_in_cpuset(const char *line, const char *cpuset)
+bool cpuline_in_cpuset(const char *line, const char *cpuset)
 {
 	int cpu;
 
@@ -1851,7 +1849,7 @@ static bool cpuline_in_cpuset(const char *line, const char *cpuset)
 /*
  * check whether this is a '^processor" line in /proc/cpuinfo
  */
-static bool is_processor_line(const char *line)
+bool is_processor_line(const char *line)
 {
 	int cpu;
 
@@ -1860,7 +1858,7 @@ static bool is_processor_line(const char *line)
 	return false;
 }
 
-static int proc_cpuinfo_read(char *buf, size_t size, off_t offset,
+int proc_cpuinfo_read(char *buf, size_t size, off_t offset,
 		struct fuse_file_info *fi)
 {
 	struct fuse_context *fc = fuse_get_context();
@@ -1940,7 +1938,7 @@ static int proc_cpuinfo_read(char *buf, size_t size, off_t offset,
 	return total_len;
 }
 
-static int proc_stat_read(char *buf, size_t size, off_t offset,
+int proc_stat_read(char *buf, size_t size, off_t offset,
 		struct fuse_file_info *fi)
 {
 	struct fuse_context *fc = fuse_get_context();
@@ -2077,7 +2075,7 @@ static int proc_stat_read(char *buf, size_t size, off_t offset,
  */
 
 /* return age of the reaper for $pid, taken from ctime of its procdir */
-static long int get_pid1_time(pid_t pid)
+long int get_pid1_time(pid_t pid)
 {
 	char fnam[100];
 	int fd;
@@ -2129,7 +2127,7 @@ static long int get_pid1_time(pid_t pid)
 	return time(NULL) - sb.st_ctime;
 }
 
-static long int getreaperage(pid_t qpid)
+long int getreaperage(pid_t qpid)
 {
 	int pid, mypipe[2], ret;
 	struct timeval tv;
@@ -2194,7 +2192,7 @@ static long int getprocidle(void)
  * For the first field, we use the mtime for the reaper for
  * the calling pid as returned by getreaperage
  */
-static int proc_uptime_read(char *buf, size_t size, off_t offset,
+int proc_uptime_read(char *buf, size_t size, off_t offset,
 		struct fuse_file_info *fi)
 {
 	struct fuse_context *fc = fuse_get_context();
